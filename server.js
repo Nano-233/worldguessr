@@ -118,7 +118,7 @@ if(!process.env.GOOGLE_CLIENT_SECRET) {
 
 
 
-const port = process.env.API_PORT || 3001;
+const port = process.env.PORT || process.env.API_PORT || 3001;
 
 let recentPlays = {}; // track the recent play gains of maps
 

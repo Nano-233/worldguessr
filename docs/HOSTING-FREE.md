@@ -236,15 +236,15 @@ API_URL=http://localhost:3001
    - **Framework Preset**: Next.js (auto-detected).
    - **Build Command**: `next build` (or leave default).
    - **Output Directory**: set to **`out`** (the app uses `output: 'export'` in `next.config.js`).
-4. **Environment Variables** — add these (use **Production**; you can add Preview/Development later if needed):
+4. **Environment Variables** — add these (use **Production**; you can add Preview/Development later if needed). **These are required:** without them, the hosted UI will show "error connecting to multiplayer server" and singleplayer will not load the map (it fetches locations from the API).
 
    | Name | Value |
    |------|--------|
-   | `NEXT_PUBLIC_API_URL` | Full API URL from Railway, e.g. `https://worldguessr-api-xxxx.up.railway.app` (with `https://`) |
-   | `NEXT_PUBLIC_WS_HOST` | **Only the host** of the WebSocket service, e.g. `worldguessr-ws-xxxx.up.railway.app` (no `https://` or path; the app adds `wss://` and `/wg`) |
+   | `NEXT_PUBLIC_API_URL` | Your Railway API base URL, e.g. `https://worldguessr-api-xxxx.up.railway.app` (or just `worldguessr-api-xxxx.up.railway.app`) |
+   | `NEXT_PUBLIC_WS_HOST` | Your Railway WebSocket service host, e.g. `worldguessr-ws-xxxx.up.railway.app` (or full URL like `https://worldguessr-ws-xxxx.up.railway.app`; the app adds `wss://` and `/wg`) |
    | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Same Google Client ID (if using login) |
 
-5. Click **Deploy**. When it’s done, note your frontend URL (e.g. `https://worldguessr-xxx.vercel.app`).
+5. Click **Deploy**. **Redeploy** after changing any `NEXT_PUBLIC_*` variable (they are baked in at build time). When it’s done, note your frontend URL (e.g. `https://worldguessr-xxx.vercel.app`).
 
 ---
 
@@ -265,6 +265,16 @@ API_URL=http://localhost:3001
 4. Optionally enable **Hide & Seek** in the lobby and run through hide/seek once.
 
 If the game creates/joins and you can play, the connection string, Redis, and env vars are set correctly.
+
+**If you see "error connecting to multiplayer server" or singleplayer map won’t load:** the frontend is still using default URLs (localhost). In **Vercel** → your project → **Settings** → **Environment Variables**, set `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_HOST` to your **deployed** Railway API and WebSocket URLs (see A.7). Then trigger a **new deployment** (Deployments → … → Redeploy); `NEXT_PUBLIC_*` values are fixed at build time.
+
+**If env vars are correct but it still fails:**
+
+1. **Redeploy Vercel** after changing any `NEXT_PUBLIC_*` (values are baked in at build time).
+2. **Railway: app must listen on `PORT`** — Railway sets `PORT`; the API and WS services now fall back to `PORT` if `API_PORT`/`WS_PORT` are not set. Ensure each service’s start command is `node server.js` and `node ws/ws.js` (no hardcoded port).
+3. **Check the browser** — Open DevTools (F12) → **Console** and **Network**. For multiplayer, look for WebSocket errors (e.g. failed to connect, 403, wrong URL). For singleplayer map, look for failed fetch to your API URL (CORS, 404, or connection refused).
+4. **Check Railway logs** — In Railway, open the API and WebSocket services and check **Deployments** → **View Logs**. Confirm they start without errors and show “listening” on the port. If the API or WS crashes or never listens, fix those first.
+5. **CORS** — The API uses `cors()` with default (all origins). If you added custom CORS, ensure your Vercel origin is allowed.
 
 ---
 
