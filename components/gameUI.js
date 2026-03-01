@@ -23,8 +23,66 @@ import gameStorage from "./utils/localStorage";
 import HealthBar from "./duelHealthbar";
 
 const MapWidget = dynamic(() => import("../components/Map"), { ssr: false });
-// import RoundOverScreen from "./roundOverScreen";
 const RoundOverScreen = dynamic(() => import("./roundOverScreen"), { ssr: false });
+
+function HiderSpectateOverlay({ visible, curRound, onDismiss }) {
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    setDismissed(false);
+  }, [curRound]);
+
+  if (!visible || dismissed) return null;
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      width: '100vw',
+      height: '100vh',
+      background: 'rgba(0,0,0,0.7)',
+      zIndex: 100000,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      color: '#fff',
+      backdropFilter: 'blur(4px)',
+    }}>
+      <div style={{
+        background: 'linear-gradient(165deg, #1a2a1a 0%, #0d1a0d 100%)',
+        border: '1px solid rgba(76, 175, 80, 0.3)',
+        borderRadius: '20px',
+        padding: '32px 48px',
+        textAlign: 'center',
+        boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
+      }}>
+        <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>👀</div>
+        <h2 style={{ margin: '0 0 8px 0', fontSize: '1.4rem' }}>This is your hiding spot!</h2>
+        <p style={{ margin: '0 0 20px 0', color: 'rgba(255,255,255,0.7)', fontSize: '0.95rem' }}>
+          Others are trying to find where you hid.
+        </p>
+        <button
+          onClick={() => { setDismissed(true); if (onDismiss) onDismiss(); }}
+          style={{
+            padding: '12px 28px',
+            border: 'none',
+            borderRadius: '12px',
+            background: 'linear-gradient(135deg, #2196f3 0%, #1976d2 100%)',
+            color: '#fff',
+            fontSize: '1rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(33, 150, 243, 0.3)',
+          }}
+        >
+          Look Around
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function GameUI({ inCoolMathGames, inGameDistribution, miniMapShown, setMiniMapShown, singlePlayerRound, setSinglePlayerRound, showDiscordModal, setShowDiscordModal, inCrazyGames, showPanoOnResult, setShowPanoOnResult, countryGuesserCorrect, setCountryGuesserCorrect, otherOptions, onboarding, setOnboarding, countryGuesser, options, timeOffset, ws, multiplayerState, backBtnPressed, setMultiplayerState, countryStreak, setCountryStreak, loading, setLoading, session, gameOptionsModalShown, setGameOptionsModalShown, mapModal, latLong, loadLocation, gameOptions, setGameOptions, showAnswer, setShowAnswer, pinPoint, setPinPoint, hintShown, setHintShown, showCountryButtons, setShowCountryButtons }) {
   const { t: text } = useTranslation("common");
@@ -204,6 +262,15 @@ export default function GameUI({ inCoolMathGames, inGameDistribution, miniMapSho
 
   const [explanations, setExplanations] = useState([]);
   const [showClueBanner, setShowClueBanner] = useState(false);
+  const [hiderLookingAround, setHiderLookingAround] = useState(false);
+
+  const isHiderSpectating = multiplayerState?.gameData?.gameMode === 'hideAndSeek' &&
+    multiplayerState?.gameData?.currentHiderId === multiplayerState?.gameData?.myId &&
+    multiplayerState?.gameData?.state === 'guess';
+
+  useEffect(() => {
+    if (!isHiderSpectating) setHiderLookingAround(false);
+  }, [isHiderSpectating, multiplayerState?.gameData?.curRound]);
 
 
    const isStartingDuel = (multiplayerState && multiplayerState.inGame && multiplayerState?.gameData?.state === 'getready' && multiplayerState?.gameData?.curRound === 1)
@@ -727,7 +794,7 @@ session={session}/>
 )}
 
 
-      {(!countryGuesser || (countryGuesser && showAnswer)) && (!multiplayerState || (multiplayerState.inGame && ['guess', 'getready'].includes(multiplayerState.gameData?.state))) && ((multiplayerState?.inGame && multiplayerState?.gameData?.curRound === 1) ? multiplayerState?.gameData?.state === "guess" : true ) && (
+      {(!countryGuesser || (countryGuesser && showAnswer)) && (!multiplayerState || (multiplayerState.inGame && ['guess', 'getready'].includes(multiplayerState.gameData?.state))) && ((multiplayerState?.inGame && multiplayerState?.gameData?.curRound === 1) ? multiplayerState?.gameData?.state === "guess" : true ) && !isHiderSpectating && (
         <>
 
 
@@ -851,7 +918,14 @@ session={session}/>
       {/* Non-duel multiplayer timer — two line style */}
       {!(multiplayerState?.gameData?.duel && multiplayerState?.gameData?.public) && (
       <span className={`timer timer--two-line ${!multiplayerTimerShown ? '' : 'shown'} ${timeToNextMultiplayerEvt <= 5 && timeToNextMultiplayerEvt > 0 && !showAnswer && !pinPoint && multiplayerState?.gameData?.state === 'guess' ? 'critical' : ''}`}>
-        <span className="timer__round-label">{text("round", {r:multiplayerState?.gameData?.curRound, mr: multiplayerState?.gameData?.rounds})}</span>
+        <span className="timer__round-label">
+          {multiplayerState?.gameData?.gameMode === 'hideAndSeek' ? (() => {
+            const hiderName = multiplayerState?.gameData?.players?.find(p => p.id === multiplayerState?.gameData?.currentHiderId)?.username || '?';
+            const cycle = multiplayerState?.gameData?.hideAndSeekCycle || 1;
+            const totalCycles = multiplayerState?.gameData?.hideAndSeekRounds || 1;
+            return `Seeking ${hiderName}'s spot (Cycle ${cycle}/${totalCycles})`;
+          })() : text("round", {r:multiplayerState?.gameData?.curRound, mr: multiplayerState?.gameData?.rounds})}
+        </span>
         <span className="timer__main-row">
           {!(multiplayerState?.gameData?.timePerRound === 86400000 && timeToNextMultiplayerEvt > 120)
             ? <><span className="timer__countdown">{timeToNextMultiplayerEvt.toFixed(1)}s</span></>
@@ -860,6 +934,13 @@ session={session}/>
         </span>
       </span>
       )}
+
+      {/* Hide and Seek spectating overlay for the hider */}
+      <HiderSpectateOverlay
+        visible={isHiderSpectating}
+        curRound={multiplayerState?.gameData?.curRound}
+        onDismiss={() => setHiderLookingAround(true)}
+      />
 
       <span className={`timer timer--two-line ${!onboardingTimerShown ? '' : 'shown'} ${timeToNextRound <= 5 && timeToNextRound > 0 && !showAnswer && !pinPoint && onboarding ? 'critical' : ''}`}>
         <span className="timer__round-label">{text("round", {r:onboarding?.round, mr: 5})}</span>
@@ -918,7 +999,9 @@ session={session}/>
             multiplayerState={multiplayerState}
             gameId={multiplayerState?.gameData?.code}
             points={multiplayerState?.gameData?.players?.find(p => p.id === multiplayerState?.gameData?.myId)?.score || 0}
-            maxPoints={multiplayerState?.gameData?.rounds * 5000}
+            maxPoints={multiplayerState?.gameData?.gameMode === 'hideAndSeek'
+              ? (multiplayerState?.gameData?.rounds - 1) * 5000 * (multiplayerState?.gameData?.hideAndSeekRounds || 1)
+              : multiplayerState?.gameData?.rounds * 5000}
             button1Text={multiplayerState?.gameData?.public ? text("playAgain") : null}
             button1Press={multiplayerState?.gameData?.public ? () => backBtnPressed(true, "unranked") : null}
             button2Text={(multiplayerState?.gameData?.public || multiplayerState?.gameData?.host) ? text("back") : null}

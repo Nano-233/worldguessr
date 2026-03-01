@@ -19,7 +19,7 @@ export default function PlayerList({ multiplayerState, playAgain, backBtn, start
     <div className="multiplayerLeaderboard g2_container">
       <span className="bigSpan">
         {gameOver?text("gameOver"):waitingForStart?host?text("yourPrivateGame"):text("privateGame"):text("leaderboard")}
-        {waitingForStart && <span style={{color: "white"}}> ({text("roundsCount",{rounds:multiplayerState.gameData?.rounds})}
+        {waitingForStart && <span style={{color: "white"}}> ({multiplayerState?.gameData?.gameMode === 'hideAndSeek' ? `Hide & Seek - ${multiplayerState.gameData?.rounds} cycle${multiplayerState.gameData?.rounds > 1 ? 's' : ''}` : text("roundsCount",{rounds:multiplayerState.gameData?.rounds})}
       {multiplayerState?.gameData?.nm && multiplayerState?.gameData?.npz && ", NMPZ"}
       {multiplayerState?.gameData?.nm && !multiplayerState?.gameData?.npz && ", NM"}
       {multiplayerState?.gameData?.npz && !multiplayerState?.gameData?.nm && ", NPZ"}

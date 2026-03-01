@@ -681,6 +681,16 @@ const GameSummary = ({
     return [];
   }, [history, multiplayerState?.gameData?.roundHistory, multiplayerState?.gameData?.myId, multiplayerState?.gameData?.duel, multiplayerState?.gameData?.public]);
 
+  const totalUniquePlayers = useMemo(() => {
+    const ids = new Set();
+    gameHistory.forEach(round => {
+      if (round.players) {
+        Object.keys(round.players).forEach(id => ids.add(id));
+      }
+    });
+    return ids.size;
+  }, [gameHistory]);
+
   // Don't render until Leaflet is ready
   if (!leafletReady || !destIconRef.current || !srcIconRef.current || !src2IconRef.current) {
     return (
@@ -1311,13 +1321,13 @@ const GameSummary = ({
                     <div className="popup-content">
                       <div className="popup-round">{text("roundNumber", {number: index + 1})} - {text("actualLocation")}</div>
                       {/* Only show points in single player games */}
-                      {(!multiplayerState?.gameData || !finalHistory[0]?.players || Object.keys(finalHistory[0].players).length <= 1) && (
+                      {(!multiplayerState?.gameData || totalUniquePlayers <= 1) && (
                         <div className="popup-points" style={{ color: getPointsColor(round.points) }}>
                           {round.points} {text("points")}
                         </div>
                       )}
                       {/* Only show distance in single player games */}
-                      {distance && (!multiplayerState?.gameData || !finalHistory[0]?.players || Object.keys(finalHistory[0].players).length <= 1) && (
+                      {distance && (!multiplayerState?.gameData || totalUniquePlayers <= 1) && (
                         <div className="popup-distance">
                           {text("distance")}: {formatDistance(distance)}
                         </div>
@@ -1484,7 +1494,7 @@ const GameSummary = ({
             </div>
 
             {/* Display rank for multiplayer non-duel games */}
-            {multiplayerState?.gameData && !multiplayerState?.gameData?.duel && finalHistory[0]?.players && Object.keys(finalHistory[0].players).length > 1 && (() => {
+            {multiplayerState?.gameData && !multiplayerState?.gameData?.duel && totalUniquePlayers > 1 && (() => {
               const rankInfo = getCurrentUserRank();
               return rankInfo && (
                 <div
@@ -1590,7 +1600,7 @@ const GameSummary = ({
 
         <div className={`rounds-container ${!mobileExpanded ? 'mobile-hidden' : ''}`} ref={roundsContainerRef}>
           {/* Show leaderboard for multiplayer games */}
-          {multiplayerState?.gameData && finalHistory[0]?.players && Object.keys(finalHistory[0].players).length > 1 && (
+          {multiplayerState?.gameData && totalUniquePlayers > 1 && (
             <>
               <h3 style={{ padding: '12px 20px', color: 'white', marginBottom: '0', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>{text("finalScores")}</h3>
               {renderLeaderboard(true)}

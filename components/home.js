@@ -48,6 +48,7 @@ import clientConfig from "@/clientConfig";
 import { useGoogleLogin } from "@react-oauth/google";
 // import haversineDistance from "./utils/haversineDistance";
 import StreetView from "./streetview/streetView";
+const HidingPhase = dynamic(() => import("./hidingPhase"), { ssr: false });
 import Stats from "stats.js";
 // import SvEmbedIframe from "./streetview/svHandler"; // REMOVED: Using direct StreetView instead of double-iframe setup
 // import getTimeString, { getMaintenanceDate } from "./maintenanceTime";
@@ -73,7 +74,10 @@ const initialMultiplayerState = {
         timePerRound: 30,
         location: "all",
         displayLocation: "All countries",
-        progress: false
+        progress: false,
+        gameMode: 'normal',
+        hideTime: 120,
+        seekTime: 30,
     },
     joinOptions: {
         gameCode: null,
@@ -1268,7 +1272,6 @@ export default function Home({ }) {
                 console.log("crazygames invite link", link)
             }
 
-            // Use the passed options directly to avoid stale state issues
             const options = args[0] || multiplayerState.createOptions;
             ws.send(JSON.stringify({ 
                 type: "setPrivateGameOptions", 
@@ -1278,7 +1281,10 @@ export default function Home({ }) {
                 npz: options.npz, 
                 showRoadName: options.showRoadName, 
                 location: options.location, 
-                displayLocation: options.displayLocation 
+                displayLocation: options.displayLocation,
+                gameMode: options.gameMode,
+                hideTime: options.hideTime,
+                seekTime: options.seekTime
             }));
         }
 
@@ -1744,6 +1750,17 @@ export default function Home({ }) {
                     player.final = data.final;
                     player.latLong = data.latLong;
                 }
+            } else if (data.type === "hidingConfirmed") {
+                setMultiplayerState((prev) => ({
+                    ...prev,
+                    gameData: {
+                        ...prev.gameData,
+                        hidingConfirmed: {
+                            ...prev.gameData?.hidingConfirmed,
+                            [data.id]: true
+                        }
+                    }
+                }));
             } else if (data.type === "gameOver") {
                 setLatLong(null)
                 setGameOptions((prev) => ({
@@ -2521,7 +2538,7 @@ export default function Home({ }) {
                     pitch={latLong?.pitch}
                     showRoadLabels={screen === "onboarding" ? false : gameOptions?.showRoadName}
                     hidden={!!((!latLong || !latLong.lat || !latLong.long) || loading) || (
-                        screen === "home" || !!(screen === "multiplayer" && (multiplayerState?.gameData?.state === "waiting" || multiplayerState?.enteringGameCode || multiplayerState?.gameQueued))
+                        screen === "home" || !!(screen === "multiplayer" && (multiplayerState?.gameData?.state === "waiting" || multiplayerState?.gameData?.state === "hiding" || multiplayerState?.enteringGameCode || multiplayerState?.gameQueued))
                     )}
                     refreshKey={latLongKey}
                     onLoad={() => {
@@ -3037,6 +3054,16 @@ export default function Home({ }) {
                         setSelectCountryModalShown={setSelectCountryModalShown}
                     />
                 </div>}
+
+                {multiplayerState.inGame && multiplayerState.gameData?.state === "hiding" && (
+                    <HidingPhase
+                        ws={ws}
+                        multiplayerState={multiplayerState}
+                        timeOffset={timeOffset}
+                        session={session}
+                        options={options}
+                    />
+                )}
 
                 {multiplayerState.inGame && ["guess", "getready", "end"].includes(multiplayerState.gameData?.state) && (
                     <GameUI

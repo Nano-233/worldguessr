@@ -603,11 +603,12 @@ app.get('/clueCountries.json', (req, res) => {
 });
 
 
-// listen 3003
+// listen on PORT (Railway/fly.io inject) or 3003 for local
+const utilsPort = process.env.PORT || 3003;
 app.get('/', (req, res) => {
   res.status(200).send('WorldGuessr Utils');
 });
 
-app.listen(3003, () => {
-  console.log('WorldGuessr Utils listening on port 3003');
+app.listen(utilsPort, () => {
+  console.log('WorldGuessr Utils listening on port ' + utilsPort);
 });

@@ -7,11 +7,11 @@ import MapsModal from "./maps/mapsModal";
 export default function PartyModal({ onClose, ws, setWs, multiplayerError, multiplayerState, setMultiplayerState, session, handleAction, gameOptions, setGameOptions, shown, setSelectCountryModalShown, selectCountryModalShown }) {
     const { t: text } = useTranslation("common");
     
-    // Local state for number inputs to allow free typing
     const [localRounds, setLocalRounds] = useState(multiplayerState?.createOptions?.rounds?.toString() || "5");
     const [localTime, setLocalTime] = useState(multiplayerState?.createOptions?.timePerRound?.toString() || "30");
+    const [localHideTime, setLocalHideTime] = useState(multiplayerState?.createOptions?.hideTime?.toString() || "120");
+    const [localSeekTime, setLocalSeekTime] = useState(multiplayerState?.createOptions?.seekTime?.toString() || "30");
     
-    // Sync local state when modal opens or multiplayer state changes
     useEffect(() => {
         if (shown) {
             setLocalRounds(multiplayerState?.createOptions?.rounds?.toString() || "5");
@@ -19,10 +19,13 @@ export default function PartyModal({ onClose, ws, setWs, multiplayerError, multi
             if (time !== 60 * 60 * 24) {
                 setLocalTime(time?.toString() || "30");
             }
+            setLocalHideTime(multiplayerState?.createOptions?.hideTime?.toString() || "120");
+            setLocalSeekTime(multiplayerState?.createOptions?.seekTime?.toString() || "30");
         }
-    }, [shown, multiplayerState?.createOptions?.rounds, multiplayerState?.createOptions?.timePerRound]);
+    }, [shown, multiplayerState?.createOptions?.rounds, multiplayerState?.createOptions?.timePerRound, multiplayerState?.createOptions?.hideTime, multiplayerState?.createOptions?.seekTime]);
     
     const isTimerDisabled = multiplayerState?.createOptions?.timePerRound === 60 * 60 * 24;
+    const isHideAndSeek = multiplayerState?.createOptions?.gameMode === 'hideAndSeek';
     
     // Helper to clamp and commit rounds value
     const commitRounds = (value) => {
@@ -54,6 +57,36 @@ export default function PartyModal({ onClose, ws, setWs, multiplayerError, multi
     const adjustTime = (delta) => {
         const current = parseInt(localTime) || 30;
         commitTime(current + delta);
+    };
+
+    const commitHideTime = (value) => {
+        const num = parseInt(value) || 30;
+        const clamped = Math.max(30, Math.min(300, num));
+        setLocalHideTime(clamped.toString());
+        setMultiplayerState(prev => ({
+            ...prev,
+            createOptions: { ...prev.createOptions, hideTime: clamped }
+        }));
+    };
+
+    const commitSeekTime = (value) => {
+        const num = parseInt(value) || 10;
+        const clamped = Math.max(10, Math.min(300, num));
+        setLocalSeekTime(clamped.toString());
+        setMultiplayerState(prev => ({
+            ...prev,
+            createOptions: { ...prev.createOptions, seekTime: clamped }
+        }));
+    };
+
+    const adjustHideTime = (delta) => {
+        const current = parseInt(localHideTime) || 120;
+        commitHideTime(current + delta);
+    };
+
+    const adjustSeekTime = (delta) => {
+        const current = parseInt(localSeekTime) || 30;
+        commitSeekTime(current + delta);
     };
 
     if (selectCountryModalShown) {
@@ -113,9 +146,38 @@ export default function PartyModal({ onClose, ws, setWs, multiplayerError, multi
                 
                 {/* Content */}
                 <div className="party-modal__content">
+                    {/* Game Mode Toggle */}
+                    <div className="party-modal__setting party-modal__setting--toggle">
+                        <label className="party-modal__label">Hide & Seek</label>
+                        <button 
+                            className={`party-modal__toggle ${isHideAndSeek ? 'party-modal__toggle--active' : ''}`}
+                            onClick={() => {
+                                const newMode = isHideAndSeek ? 'normal' : 'hideAndSeek';
+                                setMultiplayerState(prev => ({
+                                    ...prev,
+                                    createOptions: { 
+                                        ...prev.createOptions, 
+                                        gameMode: newMode,
+                                        rounds: newMode === 'hideAndSeek' ? Math.min(prev.createOptions?.rounds || 5, 5) : (prev.createOptions?.rounds || 5)
+                                    }
+                                }));
+                                if (newMode === 'hideAndSeek') {
+                                    setLocalRounds(Math.min(parseInt(localRounds) || 5, 5).toString());
+                                }
+                            }}
+                            aria-pressed={isHideAndSeek}
+                        >
+                            <span className="party-modal__toggle-track">
+                                <span className="party-modal__toggle-thumb" />
+                            </span>
+                        </button>
+                    </div>
+
+                    <div className="party-modal__divider" />
+
                     {/* Rounds Setting */}
                     <div className="party-modal__setting">
-                        <label className="party-modal__label">{text("numOfRounds")}</label>
+                        <label className="party-modal__label">{isHideAndSeek ? "Rounds (cycles)" : text("numOfRounds")}</label>
                         <div className="party-modal__stepper">
                             <button 
                                 className="party-modal__stepper-btn"
@@ -144,72 +206,146 @@ export default function PartyModal({ onClose, ws, setWs, multiplayerError, multi
                                 <FaPlus />
                             </button>
                         </div>
-                        <span className="party-modal__hint">1-20 rounds</span>
+                        <span className="party-modal__hint">{isHideAndSeek ? "1-20 cycles (each cycle: everyone hides, then seeks)" : "1-20 rounds"}</span>
                     </div>
-                    
-                    {/* Timer Toggle */}
-                    <div className="party-modal__setting party-modal__setting--toggle">
-                        <label className="party-modal__label">{text('disableTimer')}</label>
-                        <button 
-                            className={`party-modal__toggle ${isTimerDisabled ? 'party-modal__toggle--active' : ''}`}
-                            onClick={() => {
-                                const newDisabled = !isTimerDisabled;
-                                if (newDisabled) {
-                                    setMultiplayerState(prev => ({
-                                        ...prev,
-                                        createOptions: { ...prev.createOptions, timePerRound: 60 * 60 * 24 }
-                                    }));
-                                } else {
-                                    const time = parseInt(localTime) || 30;
-                                    const clamped = Math.max(10, Math.min(300, time));
-                                    setMultiplayerState(prev => ({
-                                        ...prev,
-                                        createOptions: { ...prev.createOptions, timePerRound: clamped }
-                                    }));
-                                }
-                            }}
-                            aria-pressed={isTimerDisabled}
-                        >
-                            <span className="party-modal__toggle-track">
-                                <span className="party-modal__toggle-thumb" />
-                            </span>
-                        </button>
-                    </div>
-                    
-                    {/* Time Per Round */}
-                    {!isTimerDisabled && (
-                        <div className="party-modal__setting">
-                            <label className="party-modal__label">{text("timePerRoundSecs")}</label>
-                            <div className="party-modal__stepper">
+
+                    {isHideAndSeek ? (
+                        <>
+                            {/* Time to Hide */}
+                            <div className="party-modal__setting">
+                                <label className="party-modal__label">Time to Hide (seconds)</label>
+                                <div className="party-modal__stepper">
+                                    <button 
+                                        className="party-modal__stepper-btn"
+                                        onClick={() => adjustHideTime(-10)}
+                                        disabled={parseInt(localHideTime) <= 30}
+                                        aria-label="Decrease hide time"
+                                    >
+                                        <FaMinus />
+                                    </button>
+                                    <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
+                                        className="party-modal__stepper-input"
+                                        value={localHideTime}
+                                        onChange={(e) => setLocalHideTime(e.target.value.replace(/[^0-9]/g, ''))}
+                                        onBlur={(e) => commitHideTime(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && commitHideTime(e.target.value)}
+                                    />
+                                    <button 
+                                        className="party-modal__stepper-btn"
+                                        onClick={() => adjustHideTime(10)}
+                                        disabled={parseInt(localHideTime) >= 300}
+                                        aria-label="Increase hide time"
+                                    >
+                                        <FaPlus />
+                                    </button>
+                                </div>
+                                <span className="party-modal__hint">30-300 seconds</span>
+                            </div>
+
+                            {/* Time to Seek */}
+                            <div className="party-modal__setting">
+                                <label className="party-modal__label">Time to Seek (seconds)</label>
+                                <div className="party-modal__stepper">
+                                    <button 
+                                        className="party-modal__stepper-btn"
+                                        onClick={() => adjustSeekTime(-10)}
+                                        disabled={parseInt(localSeekTime) <= 10}
+                                        aria-label="Decrease seek time"
+                                    >
+                                        <FaMinus />
+                                    </button>
+                                    <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
+                                        className="party-modal__stepper-input"
+                                        value={localSeekTime}
+                                        onChange={(e) => setLocalSeekTime(e.target.value.replace(/[^0-9]/g, ''))}
+                                        onBlur={(e) => commitSeekTime(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && commitSeekTime(e.target.value)}
+                                    />
+                                    <button 
+                                        className="party-modal__stepper-btn"
+                                        onClick={() => adjustSeekTime(10)}
+                                        disabled={parseInt(localSeekTime) >= 300}
+                                        aria-label="Increase seek time"
+                                    >
+                                        <FaPlus />
+                                    </button>
+                                </div>
+                                <span className="party-modal__hint">10-300 seconds</span>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            {/* Timer Toggle */}
+                            <div className="party-modal__setting party-modal__setting--toggle">
+                                <label className="party-modal__label">{text('disableTimer')}</label>
                                 <button 
-                                    className="party-modal__stepper-btn"
-                                    onClick={() => adjustTime(-10)}
-                                    disabled={parseInt(localTime) <= 10}
-                                    aria-label="Decrease time"
+                                    className={`party-modal__toggle ${isTimerDisabled ? 'party-modal__toggle--active' : ''}`}
+                                    onClick={() => {
+                                        const newDisabled = !isTimerDisabled;
+                                        if (newDisabled) {
+                                            setMultiplayerState(prev => ({
+                                                ...prev,
+                                                createOptions: { ...prev.createOptions, timePerRound: 60 * 60 * 24 }
+                                            }));
+                                        } else {
+                                            const time = parseInt(localTime) || 30;
+                                            const clamped = Math.max(10, Math.min(300, time));
+                                            setMultiplayerState(prev => ({
+                                                ...prev,
+                                                createOptions: { ...prev.createOptions, timePerRound: clamped }
+                                            }));
+                                        }
+                                    }}
+                                    aria-pressed={isTimerDisabled}
                                 >
-                                    <FaMinus />
-                                </button>
-                                <input
-                                    type="text"
-                                    inputMode="numeric"
-                                    pattern="[0-9]*"
-                                    className="party-modal__stepper-input"
-                                    value={localTime}
-                                    onChange={(e) => setLocalTime(e.target.value.replace(/[^0-9]/g, ''))}
-                                    onBlur={(e) => commitTime(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && commitTime(e.target.value)}
-                                />
-                                <button 
-                                    className="party-modal__stepper-btn"
-                                    onClick={() => adjustTime(10)}
-                                    disabled={parseInt(localTime) >= 300}
-                                    aria-label="Increase time"
-                                >
-                                    <FaPlus />
+                                    <span className="party-modal__toggle-track">
+                                        <span className="party-modal__toggle-thumb" />
+                                    </span>
                                 </button>
                             </div>
-                            <span className="party-modal__hint">10-300 seconds</span>
-                        </div>
+                            
+                            {/* Time Per Round */}
+                            {!isTimerDisabled && (
+                                <div className="party-modal__setting">
+                                    <label className="party-modal__label">{text("timePerRoundSecs")}</label>
+                                    <div className="party-modal__stepper">
+                                        <button 
+                                            className="party-modal__stepper-btn"
+                                            onClick={() => adjustTime(-10)}
+                                            disabled={parseInt(localTime) <= 10}
+                                            aria-label="Decrease time"
+                                        >
+                                            <FaMinus />
+                                        </button>
+                                        <input
+                                            type="text"
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
+                                            className="party-modal__stepper-input"
+                                            value={localTime}
+                                            onChange={(e) => setLocalTime(e.target.value.replace(/[^0-9]/g, ''))}
+                                            onBlur={(e) => commitTime(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && commitTime(e.target.value)}
+                                        />
+                                        <button 
+                                            className="party-modal__stepper-btn"
+                                            onClick={() => adjustTime(10)}
+                                            disabled={parseInt(localTime) >= 300}
+                                            aria-label="Increase time"
+                                        >
+                                            <FaPlus />
+                                        </button>
+                                    </div>
+                                    <span className="party-modal__hint">10-300 seconds</span>
+                                </div>
+                            )}
+                        </>
                     )}
                     
                     <div className="party-modal__divider" />
@@ -235,6 +371,8 @@ export default function PartyModal({ onClose, ws, setWs, multiplayerError, multi
                         </button>
                     </div>
                     
+                    {!isHideAndSeek && (
+                    <>
                     <div className="party-modal__divider" />
                     
                     {/* Map Selection */}
@@ -255,6 +393,8 @@ export default function PartyModal({ onClose, ws, setWs, multiplayerError, multi
                             {text("change")}
                         </button>
                     </div>
+                    </>
+                    )}
                 </div>
                 
                 {/* Footer */}
@@ -262,7 +402,6 @@ export default function PartyModal({ onClose, ws, setWs, multiplayerError, multi
                     <button 
                         className="party-modal__save-btn"
                         onClick={() => {
-                            // Construct the complete options object with all current values
                             const finalOptions = {
                                 ...multiplayerState.createOptions,
                                 nm: gameOptions.nm,
@@ -270,13 +409,11 @@ export default function PartyModal({ onClose, ws, setWs, multiplayerError, multi
                                 showRoadName: gameOptions.showRoadName
                             };
                             
-                            // Update local state
                             setMultiplayerState(prev => ({
                                 ...prev,
                                 createOptions: finalOptions
                             }));
                             
-                            // Send to server with the complete options
                             handleAction("setPrivateGameOptions", finalOptions);
                             onClose();
                         }}

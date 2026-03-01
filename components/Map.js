@@ -132,7 +132,7 @@ function MapPlugin({ pinPoint, setPinPoint, answerShown, dest, gameOptions, ws, 
   }, [map]);
 }
 
-const MapComponent = ({ shown, options, ws, session, pinPoint, setPinPoint, answerShown, location, setKm, guessing, multiplayerSentGuess, multiplayerState, showHint, round, focused, gameOptions }) => {
+const MapComponent = ({ shown, options, ws, session, pinPoint, setPinPoint, answerShown, location, setKm, guessing, multiplayerSentGuess, multiplayerState, showHint, round, focused, gameOptions, svCoverageOverlay, pinLabel }) => {
   const mapRef = React.useRef(null);
   const plopSound = React.useRef();
   const [isMobileOrTablet, setIsMobileOrTablet] = useState(false);
@@ -223,8 +223,7 @@ const MapComponent = ({ shown, options, ws, session, pinPoint, setPinPoint, answ
         <>
           <Marker position={pinPoint} icon={customPins[session?.token?.username] === "polandball" ? icons.polandball : icons.src} >
           <Tooltip direction="top" offset={[0, -45]} opacity={1} permanent  position={{ lat: pinPoint.lat, lng: pinPoint.lng }}>
-
-              {text("yourGuess")}
+              {pinLabel !== undefined ? pinLabel : text("yourGuess")}
             </Tooltip>
           </Marker>
 
@@ -298,10 +297,17 @@ const MapComponent = ({ shown, options, ws, session, pinPoint, setPinPoint, answ
         subdomains={['0', '1', '2', '3']}
         attribution='&copy; <a href="https://maps.google.com">Google</a>'
         maxZoom={22}
-        // tileSize={isMobileOrTablet ? 512 : 256}
-        // zoomOffset={isMobileOrTablet ? -1 : 0}
-        // detectRetina={true}
       />
+
+      {svCoverageOverlay && (
+        <TileLayer
+          url="https://mts1.googleapis.com/vt?hl=en-US&lyrs=svv|cb_client:apiv3&style=40,18&x={x}&y={y}&z={z}"
+          opacity={0.6}
+          noWrap={true}
+          maxNativeZoom={18}
+          maxZoom={22}
+        />
+      )}
 
     <audio ref={plopSound} src={asset("/plop.mp3")} preload="auto"></audio>
 

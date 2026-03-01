@@ -84,7 +84,8 @@ let allLocations = [{"lat":59.94945834525827,"long":10.74877784715781,"country":
 
 const generateMainLocations = async () => {
   try {
-  fetch('http://localhost:3003/allCountries.json').then(async (res) => {
+  const utilsUrl = process.env.UTILS_URL || 'http://localhost:3003';
+  fetch(utilsUrl + '/allCountries.json').then(async (res) => {
     const data = await res.json();
     if(data.locations && Array.isArray(data.locations) && data.locations.length > 0) {
       allLocations = data.locations;
@@ -462,22 +463,17 @@ setInterval(() => {
   ipDuelRequestsLast10.clear();
 }, 10000);
 
-function updateGameOptions(game, rounds=5, timePerRound=30, location="all", nm=false, npz=false, showRoadName=true, displayLocation="World") {
-          // maxDist no longer required-> can be pulled from community map
+function updateGameOptions(game, rounds=5, timePerRound=30, location="all", nm=false, npz=false, showRoadName=true, displayLocation="World", gameMode, hideTime, seekTime) {
           if (!location) return;
           if (!rounds || !timePerRound) {
             return;
           }
-          // make sure displayLocation isa string
           if (typeof displayLocation !== 'string') {
             displayLocation = null;
           }
           if(displayLocation) {
-            // trim to 30 characters
             displayLocation = displayLocation.substring(0, 30);
-
           }
-          // if(!locations || !Array.isArray(locations) || locations.length < 1 || locations.length > 20) return;
           if (rounds < 1 || rounds > 20 || timePerRound < 10 || (timePerRound > 300 && timePerRound !== 60*60*24 )) {
             return;
           }
@@ -486,18 +482,30 @@ function updateGameOptions(game, rounds=5, timePerRound=30, location="all", nm=f
           if(!npz) npz = false;
           if(!showRoadName) showRoadName = false;
 
-          game.timePerRound = timePerRound * 1000;
+          // Hide and Seek mode settings
+          if (gameMode === 'hideAndSeek') {
+            game.gameMode = 'hideAndSeek';
+            game.hideTime = Math.max(30, Math.min(300, Number(hideTime) || 120)) * 1000;
+            game.seekTime = Math.max(10, Math.min(300, Number(seekTime) || 30)) * 1000;
+            game.hideAndSeekRounds = Number(rounds);
+            game.timePerRound = game.seekTime;
+            game.rounds = Number(rounds);
+          } else {
+            game.gameMode = 'normal';
+            game.timePerRound = timePerRound * 1000;
+            game.rounds = Number(rounds);
+          }
+
           game.nm = !!nm;
           game.npz = !!npz;
           game.showRoadName = !!showRoadName;
           game.location = location;
-          // clear current locations
           game.locations = [];
-          game.rounds = Number(rounds);
           game.displayLocation = displayLocation;
 
-          // generate locations
-          game.generateLocations(allLocations);
+          if (game.gameMode !== 'hideAndSeek') {
+            game.generateLocations(allLocations);
+          }
 
           game.sendStateUpdate(true);
 
@@ -725,17 +733,27 @@ app.ws('/wg', {
         const latLong = json.latLong;
         const final = json.final;
 
-        // make sure latLong is an array of floats with 2 elements
         if (!Array.isArray(latLong) || latLong.length !== 2) {
           return;
         }
 
-        // make sure final is a boolean
         if (typeof final !== 'boolean') {
           return;
         }
 
         game.setGuess(player.id, latLong, final);
+      }
+
+      if (json.type === 'setHidingSpot' && player.gameId && games.has(player.gameId)) {
+        const game = games.get(player.gameId);
+        if (game.gameMode !== 'hideAndSeek' || game.state !== 'hiding') return;
+        const latLong = json.latLong;
+        const confirmed = json.confirmed;
+
+        if (!Array.isArray(latLong) || latLong.length !== 2) return;
+        if (typeof latLong[0] !== 'number' || typeof latLong[1] !== 'number') return;
+
+        game.setHidingSpot(player.id, latLong, !!confirmed);
       }
 
       if (json.type === 'chat' && player.gameId && games.has(player.gameId)) {
@@ -973,11 +991,9 @@ app.ws('/wg', {
 
       if(json.type === "setPrivateGameOptions" && player.gameId && games.has(player.gameId)) {
         const game = games.get(player.gameId);
-        // make sure player is host
         if(game.players[player.id].host) {
-          let { rounds, timePerRound, location, nm, npz, showRoadName, displayLocation } = json;
-          updateGameOptions(game, rounds, timePerRound, location, nm, npz, showRoadName, displayLocation);
-
+          let { rounds, timePerRound, location, nm, npz, showRoadName, displayLocation, gameMode, hideTime, seekTime } = json;
+          updateGameOptions(game, rounds, timePerRound, location, nm, npz, showRoadName, displayLocation, gameMode, hideTime, seekTime);
         }
       }
 
@@ -1427,31 +1443,46 @@ try {
       // start games that have at least 2 players
       if (game.state === 'waiting' && playerCnt > 1 && game.public && game.rounds === game.locations.length) {
         game.start();
+      } else if (game.state === 'hiding' && Date.now() > game.nextEvtTime) {
+        // H&S: hiding phase ended (time expired) — finalize
+        game.finalizeHidingPhase();
+
       } else if (game.state === 'getready' && Date.now() > game.nextEvtTime) {
         if(game.curRound > game.rounds || game.readyToEnd) {
-          game.end();
-          // game over
+          // For H&S: check if there are more cycles
+          if (game.gameMode === 'hideAndSeek' && game.hideAndSeekCycle < game.hideAndSeekRounds) {
+            game.hideAndSeekCycle++;
+            game.beginHidingPhase();
+          } else {
+            game.end();
+          }
 
         } else {
+        // For H&S mode, set the current hider before clearing guesses
+        if (game.gameMode === 'hideAndSeek') {
+          game.currentHiderId = game.hidingOrder[game.curRound - 1];
+        }
         game.state = 'guess';
-        game.nextEvtTime = Date.now() + game.timePerRound;
+        game.nextEvtTime = Date.now() + (game.gameMode === 'hideAndSeek' ? game.seekTime : game.timePerRound);
         game.clearGuesses();
 
-        game.sendStateUpdate();
+        game.sendStateUpdate(game.gameMode === 'hideAndSeek');
         }
 
       } else if (game.state === 'guess' && Date.now() > game.nextEvtTime) {
         game.givePoints();
-        game.saveRoundToHistory(); // Save the round data after points are calculated
+        game.saveRoundToHistory();
         if(game.curRound <= game.rounds) {
           game.curRound++;
+          // Update currentHiderId for next sub-round (if still within bounds)
+          if (game.gameMode === 'hideAndSeek' && game.curRound <= game.rounds) {
+            game.currentHiderId = game.hidingOrder[game.curRound - 1];
+          }
           game.state = 'getready';
           game.nextEvtTime = Date.now() + game.waitBetweenRounds - (game.curRound > game.rounds ? 5000: 0);
           game.sendStateUpdate();
 
-
         } else {
-          // game over
           game.end()
         }
       }

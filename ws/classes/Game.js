@@ -22,7 +22,7 @@ export default class Game {
     this.id = id;
     this.code = publicLobby ? null : make6DigitCode();
     this.players = {};
-    this.state = 'waiting'; // [waiting, getready, guess, end]
+    this.state = 'waiting'; // [waiting, hiding, getready, guess, end]
     this.public = publicLobby;
     this.duel = isDuel;
     this.gameCount = 1; // Track how many times this game has been played
@@ -51,6 +51,16 @@ export default class Game {
     this.rankedDuelPersistentData = {}; // Store persistent player data for ranked duels only
     this.saveInProgress = false; // Track if MongoDB save is in progress
     this.cleanupInProgress = false; // Prevent re-entrant cleanup during shutdown
+
+    // Hide and Seek mode
+    this.gameMode = 'normal'; // 'normal' | 'hideAndSeek'
+    this.hideTime = 120000; // ms to pick a hiding spot
+    this.seekTime = 30000; // ms per seek round
+    this.hideAndSeekRounds = 1; // number of full H&S cycles
+    this.hideAndSeekCycle = 0; // current cycle (1-based during game)
+    this.hidingSpots = {}; // playerId -> { lat, long, confirmed }
+    this.hidingOrder = []; // ordered playerIds for seek sub-rounds
+    this.currentHiderId = null; // whose hiding spot is currently being guessed
 
     if(this.public) {
       this.showRoadName = false;
@@ -95,6 +105,14 @@ export default class Game {
       gameCount: this.gameCount,
       location: this.location,
       saveInProgress: this.saveInProgress,
+      gameMode: this.gameMode,
+      hideTime: this.hideTime,
+      seekTime: this.seekTime,
+      hideAndSeekRounds: this.hideAndSeekRounds,
+      hideAndSeekCycle: this.hideAndSeekCycle,
+      hidingSpots: this.hidingSpots,
+      hidingOrder: this.hidingOrder,
+      currentHiderId: this.currentHiderId,
     }
   }
   static fromJSON(json) {
@@ -146,14 +164,14 @@ export default class Game {
   }
 
   getInitialSendState(player) {
-    return {
+    const state = {
       type: 'game',
       state: this.state,
-      timePerRound: this.timePerRound,
+      timePerRound: this.gameMode === 'hideAndSeek' ? this.seekTime : this.timePerRound,
       waitBetweenRounds: this.waitBetweenRounds,
       startTime: this.startTime,
       nextEvtTime: this.nextEvtTime,
-      locations: this.locations,
+      locations: this.state === 'hiding' ? undefined : this.locations,
       rounds: this.rounds,
       curRound: this.curRound,
       maxPlayers: this.maxPlayers,
@@ -165,26 +183,33 @@ export default class Game {
       maxDist: this.maxDist,
       code: this.code,
       extent: this.extent,
-      generated: this.locations.length,
+      generated: this.gameMode === 'hideAndSeek' ? this.rounds : this.locations.length,
       displayLocation: this.displayLocation,
       roundHistory: this.roundHistory,
 
       nm: this.nm,
       npz: this.npz,
       showRoadName: this.showRoadName,
+    };
+    if (this.gameMode === 'hideAndSeek') {
+      Object.assign(state, this.getHideAndSeekSendState());
     }
+    return state;
   }
 
   resetGame(allLocations) {
     this.state = 'waiting';
-    // clear locations
     this.locations = [];
-    // clear round history
     this.roundHistory = [];
-    // increment game count for party games
     this.gameCount++;
-    // start generating new locations
-    this.generateLocations(allLocations);
+    this.hidingSpots = {};
+    this.hidingOrder = [];
+    this.currentHiderId = null;
+    this.hideAndSeekCycle = 0;
+    this.curRound = 0;
+    if (this.gameMode !== 'hideAndSeek') {
+      this.generateLocations(allLocations);
+    }
     this.sendStateUpdate();
   }
 
@@ -204,6 +229,9 @@ export default class Game {
   givePoints() {
     if(!this.duel) {
     for (const playerId of Object.keys(this.players)) {
+      // In H&S mode, skip the hider for this round
+      if (this.gameMode === 'hideAndSeek' && playerId === this.currentHiderId) continue;
+
       const player = this.players[playerId];
       if(!player.guess) {
         continue;
@@ -293,11 +321,14 @@ export default class Game {
       const roundData = {
         round: this.curRound,
         location: this.locations[this.curRound - 1],
-        players: {}
+        players: {},
+        ...(this.gameMode === 'hideAndSeek' ? { hiderId: this.currentHiderId } : {})
       };
 
-      // Save each player's guess and calculated points for this round
       for (const playerId of Object.keys(this.players)) {
+        // Skip the hider in H&S mode
+        if (this.gameMode === 'hideAndSeek' && playerId === this.currentHiderId) continue;
+
         const player = this.players[playerId];
 
         if (player.guess) {
@@ -357,11 +388,17 @@ export default class Game {
   clearGuesses() {
     for (const playerId of Object.keys(this.players)) {
       const player = this.players[playerId];
+      // In H&S mode, mark the hider as already final (they spectate)
+      if (this.gameMode === 'hideAndSeek' && playerId === this.currentHiderId) {
+        player.guess = null;
+        player.final = true;
+        player.roundTimeTaken = null;
+        continue;
+      }
       player.guess = null;
       player.final = false;
-      player.roundTimeTaken = null; // Reset time for new round
+      player.roundTimeTaken = null;
     }
-    // Track when this round's guessing phase starts for time calculation
     this.roundStartTimes[this.curRound] = Date.now();
   }
 
@@ -374,7 +411,7 @@ export default class Game {
       maxPlayers: this.maxPlayers,
       nextEvtTime: this.nextEvtTime,
       players: Object.values(this.players),
-      generated: this.locations?.length || 0,
+      generated: this.gameMode === 'hideAndSeek' ? this.rounds : (this.locations?.length || 0),
       map: this.location,
       extent: this.extent,
       showRoadName: !!this.showRoadName,
@@ -382,16 +419,18 @@ export default class Game {
       npz: !!this.npz
     };
     if (includeLocations) {
-      state.locations = this.locations;
+      state.locations = this.state === 'hiding' ? undefined : this.locations;
       state.rounds = this.rounds;
-      state.timePerRound = this.timePerRound;
+      state.timePerRound = this.gameMode === 'hideAndSeek' ? this.seekTime : this.timePerRound;
       state.nm = this.nm;
       state.npz = this.npz;
       state.showRoadName = this.showRoadName;
       state.rounds = this.rounds;
       state.displayLocation = this.displayLocation;
       state.roundHistory = this.roundHistory;
-      // timePerround, nm,npz,showRoadName,rounds
+    }
+    if (this.gameMode === 'hideAndSeek') {
+      Object.assign(state, this.getHideAndSeekSendState());
     }
     return state;
   }
@@ -478,6 +517,10 @@ export default class Game {
       return;
     }
 
+    if (this.gameMode === 'hideAndSeek') {
+      return this.startHideAndSeek(hostPlayer);
+    }
+
     if (this.rounds !== this.locations.length) {
       console.log('Cannot start game: locations not loaded', this.rounds, this.locations.length);
       if (hostPlayer) {
@@ -504,6 +547,106 @@ export default class Game {
 
 
     this.sendStateUpdate(true);
+  }
+
+  // --- Hide and Seek methods ---
+
+  startHideAndSeek(hostPlayer) {
+    this.startTime = Date.now();
+    this.hideAndSeekCycle = 1;
+    this.roundHistory = [];
+    this.locations = [];
+    this.curRound = 0;
+
+    for (const playerId of Object.keys(this.players)) {
+      this.players[playerId].score = 0;
+    }
+
+    this.beginHidingPhase();
+  }
+
+  beginHidingPhase() {
+    this.state = 'hiding';
+    this.hidingSpots = {};
+    this.hidingOrder = [];
+    this.currentHiderId = null;
+    this.nextEvtTime = Date.now() + this.hideTime;
+
+    for (const playerId of Object.keys(this.players)) {
+      this.hidingSpots[playerId] = { lat: null, long: null, confirmed: false };
+    }
+
+    this.sendStateUpdate(true);
+  }
+
+  setHidingSpot(playerId, latLong, confirmed) {
+    if (this.state !== 'hiding') return;
+    if (!this.players[playerId]) return;
+    if (!this.hidingSpots[playerId]) return;
+    if (this.hidingSpots[playerId].confirmed && confirmed) return;
+
+    this.hidingSpots[playerId] = {
+      lat: latLong[0],
+      long: latLong[1],
+      confirmed: !!confirmed
+    };
+
+    if (confirmed) {
+      this.sendAllPlayers({
+        type: 'hidingConfirmed',
+        id: playerId
+      });
+      this.checkHidingComplete();
+    }
+  }
+
+  checkHidingComplete() {
+    const allConfirmed = Object.keys(this.players).every(
+      pid => this.hidingSpots[pid]?.confirmed
+    );
+    if (allConfirmed && (this.nextEvtTime - Date.now()) > 1000) {
+      this.nextEvtTime = Date.now() + 1000;
+      this.sendStateUpdate();
+    }
+  }
+
+  finalizeHidingPhase() {
+    const playerIds = Object.keys(this.players);
+    this.hidingOrder = shuffle([...playerIds]);
+
+    this.locations = this.hidingOrder.map(pid => {
+      const spot = this.hidingSpots[pid];
+      if (spot && spot.lat !== null && spot.long !== null) {
+        return { lat: spot.lat, long: spot.long, country: lookup(spot.lat, spot.long)?.[0] || 'unknown' };
+      }
+      // Fallback: random world location if player didn't confirm
+      return { lat: 48.8566, long: 2.3522, country: 'FR' };
+    });
+
+    this.rounds = this.hidingOrder.length;
+    this.curRound = 1;
+    this.currentHiderId = this.hidingOrder[0];
+
+    this.state = 'getready';
+    this.nextEvtTime = Date.now() + 5000;
+    this.sendStateUpdate(true);
+  }
+
+  getHideAndSeekSendState() {
+    return {
+      gameMode: this.gameMode,
+      hideTime: this.hideTime,
+      seekTime: this.seekTime,
+      hideAndSeekRounds: this.hideAndSeekRounds,
+      hideAndSeekCycle: this.hideAndSeekCycle,
+      currentHiderId: this.currentHiderId,
+      hidingOrder: this.hidingOrder,
+      hidingConfirmed: this.state === 'hiding'
+        ? Object.fromEntries(
+            Object.entries(this.hidingSpots).map(([pid, s]) => [pid, s.confirmed])
+          )
+        : undefined,
+    };
   }
   setGuess(playerId, latLong, final) {
     if(this.state !== 'guess') {
@@ -542,11 +685,12 @@ export default class Game {
 
   }
   checkRemaining() {
-          // check if all players have placed
           let allFinal = true;
           let remainingCount = 0;
           let finalPlayer = null;
           for (const p of Object.values(this.players)) {
+            // Hider is always marked final, skip them for "last guesser" logic
+            if (this.gameMode === 'hideAndSeek' && p.id === this.currentHiderId) continue;
             if (!p.final) {
               allFinal = false;
               remainingCount++;
@@ -658,7 +802,8 @@ export default class Game {
     let loc;
       this.maxDist = countryMaxDists[this.location] || 20000;
       this.extent = officialCountryMaps.find((c) => c.countryCode === this.location)?.extent || null;
-      let data = await fetch('http://localhost:3001/countryLocations/'+this.location, {
+      const apiUrl = process.env.API_URL || 'http://localhost:3001';
+      let data = await fetch(apiUrl + '/countryLocations/'+this.location, {
         headers: {
           'Content-Type': 'application/json'
         },
