@@ -251,8 +251,9 @@ API_URL=http://localhost:3001
 ### A.8 Finish Google OAuth (if you use login)
 
 1. In **Google Cloud Console** → **APIs & Services** → **Credentials** → your OAuth client.
-2. **Authorized JavaScript origins**: add `https://your-actual-vercel-url.vercel.app`.
-3. **Authorized redirect URIs**: add `https://your-actual-vercel-url.vercel.app`.
+2. **Authorized JavaScript origins**: add your exact frontend URL, e.g. `https://your-app.vercel.app` (no trailing slash).
+3. **Authorized redirect URIs**: add the **exact** same URL the app uses (no trailing slash), e.g. `https://your-app.vercel.app`.  
+   - If you get **Error 400: redirect_uri_mismatch**, the value here must match character-for-character what the app sends (the app now normalizes to no trailing slash). Add both if unsure: `https://your-app.vercel.app` and `https://your-app.vercel.app/`.
 4. Save.
 
 ---

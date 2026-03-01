@@ -46,6 +46,13 @@ const MapGuessrModal = dynamic(() => import("@/components/mapGuessrModal"), { ss
 import changelog from "@/components/changelog.json";
 import clientConfig from "@/clientConfig";
 import { useGoogleLogin } from "@react-oauth/google";
+
+// Canonical redirect_uri for Google OAuth (no trailing slash) so it matches Google Console exactly
+function getGoogleRedirectUri() {
+  if (typeof window === "undefined") return undefined;
+  const base = window.location.origin + window.location.pathname;
+  return base.replace(/\/+$/, "") || window.location.origin;
+}
 // import haversineDistance from "./utils/haversineDistance";
 import StreetView from "./streetview/streetView";
 const HidingPhase = dynamic(() => import("./hidingPhase"), { ssr: false });
@@ -185,11 +192,12 @@ export default function Home({ }) {
         login = useGoogleLogin({
             onSuccess: tokenResponse => {
                 console.log("[Auth] Starting Google OAuth with retry mechanism");
+                const redirectUri = getGoogleRedirectUri();
 
                 retryManager.fetchWithRetry(
                     clientConfig().apiUrl + "/api/googleAuth",
                     {
-                        body: JSON.stringify({ code: tokenResponse.code }),
+                        body: JSON.stringify({ code: tokenResponse.code, redirect_uri: redirectUri }),
                         method: "POST",
                         headers: {
                             'Content-Type': 'application/json'
@@ -227,9 +235,9 @@ export default function Home({ }) {
 
             },
             flow: "auth-code",
+            redirect_uri: getGoogleRedirectUri(),
             ...(process.env.NEXT_PUBLIC_GAMEDISTRIBUTION === "true" ? {
                 ux_mode: "redirect",
-                redirect_uri: typeof window !== "undefined" ? window.location.origin + window.location.pathname : undefined,
             } : {}),
         });
 
@@ -623,7 +631,7 @@ export default function Home({ }) {
                 retryManager.fetchWithRetry(
                     clientConfig().apiUrl + "/api/googleAuth",
                     {
-                        body: JSON.stringify({ code, redirect_uri: window.location.origin + window.location.pathname }),
+                        body: JSON.stringify({ code, redirect_uri: getGoogleRedirectUri() }),
                         method: "POST",
                         headers: { 'Content-Type': 'application/json' }
                     },

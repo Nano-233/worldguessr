@@ -105,7 +105,11 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { code, secret, redirect_uri } = req.body;
+  let { code, secret, redirect_uri } = req.body;
+  // Normalize so it matches Google Console (no trailing slash); avoids redirect_uri_mismatch
+  if (redirect_uri && typeof redirect_uri === "string") {
+    redirect_uri = redirect_uri.replace(/\/+$/, "") || redirect_uri;
+  }
   if (!code) {
     // Prevent NoSQL injection - secret must be a string
     if(!secret || typeof secret !== 'string') {
