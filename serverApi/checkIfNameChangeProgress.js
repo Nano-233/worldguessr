@@ -1,4 +1,4 @@
-// pages/api/checkNameChange.js
+// serverApi/checkIfNameChangeProgress.js
 import User from '../models/User.js';
 
 export default async function handler(req, res) {

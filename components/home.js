@@ -2419,7 +2419,7 @@ export default function Home({ }) {
 
     // Note: Both banned users and users with pending name change CAN still play singleplayer
     // They just can't do multiplayer - the check is done in the websocket server
-    // Banned users are also excluded from leaderboards (handled in api/leaderboard.js)
+    // Banned users are also excluded from leaderboards (handled in serverApi/leaderboard.js)
 
     return (
         <>

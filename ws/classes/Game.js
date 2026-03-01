@@ -11,7 +11,7 @@ import lookup from "coordinate_to_country";
 import calcPoints from "../../components/calcPoints.js";
 import { boundingExtent } from "ol/extent.js";
 import { fromLonLat } from "ol/proj.js";
-import { setElo } from "../../api/eloRank.js";
+import { setElo } from "../../serverApi/eloRank.js";
 import GameModel from "../../models/Game.js";
 import User from "../../models/User.js";
 import UserStatsService from "../../components/utils/userStatsService.js";

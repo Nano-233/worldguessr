@@ -39,10 +39,9 @@ const dailyLeaderboardSchema = new mongoose.Schema({
     default: Date.now
   },
 
-  // Cache expiry (for cleanup jobs)
+  // Cache expiry (for cleanup jobs) — index created via TTL below, do not add index: true
   expiresAt: {
-    type: Date,
-    index: true
+    type: Date
   }
 });
 

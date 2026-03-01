@@ -61,7 +61,7 @@ app.use((req, res, next) => {
 });
 
 // Setup  /api routes
-const apiFolder = path.join(__dirname, 'api');
+const apiFolder = path.join(__dirname, 'serverApi');
 function loadFolder(folder, subdir = '') {
   fs.readdirSync(folder).forEach(file => {
     const filePath = path.join(folder, file);
@@ -73,7 +73,7 @@ function loadFolder(folder, subdir = '') {
       return;
     }
 
-    const routePath = './api/' + subdir + file.split('.')[0]+'.js';
+    const routePath = './serverApi/' + subdir + file.split('.')[0]+'.js';
     const webPath = '/api/' + subdir + file.split('.')[0];
     import(routePath).then(module => {
       app.all(webPath, ( req, res ) => {

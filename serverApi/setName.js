@@ -1,4 +1,4 @@
-// pages/api/setName.js
+// serverApi/setName.js
 import User, { USERNAME_COLLATION } from "../models/User.js";
 import { Webhook } from "discord-webhook-node";
 import { USERNAME_CHANGE_COOLDOWN } from "./publicAccount.js";

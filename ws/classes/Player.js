@@ -5,7 +5,7 @@ import moment from "moment";
 import { disconnectedPlayers, games, players } from "../../serverUtils/states.js";
 import User from "../../models/User.js";
 import { getLeague } from "../../components/utils/leagues.js";
-import { setElo } from "../../api/eloRank.js";
+import { setElo } from "../../serverApi/eloRank.js";
 import { createUUID } from "../../components/createUUID.js";
 export default class Player {
   constructor(ws, id, ip, username=null, accountId=null, gameId=null) {

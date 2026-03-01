@@ -125,7 +125,7 @@ const gameSchema = new mongoose.Schema({
 gameSchema.index({ gameType: 1, createdAt: -1 });
 gameSchema.index({ 'players.accountId': 1, createdAt: -1 }); // User's game history
 gameSchema.index({ gameType: 1, 'players.accountId': 1, createdAt: -1 }); // User's games by type
-gameSchema.index({ gameId: 1 }); // Unique game lookup
+// gameId already has unique: true on the schema, which creates the index
 gameSchema.index({ 'multiplayer.gameCode': 1 }); // Private game code lookup
 
 const Game = mongoose.model('Game', gameSchema);
